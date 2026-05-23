@@ -1419,10 +1419,10 @@ impl App {
             DialogMode::None => {}
         }
 
-        // F5 → reload conversation list (and re-render current viewer).
+        // Ctrl+L → reload conversation list (and re-render current viewer).
         // Lives above the mode dispatch so it works in both list and view
         // modes. Skipped above when a modal dialog is open.
-        if code == KeyCode::F(5) {
+        if code == KeyCode::Char('l') && modifiers.contains(KeyModifiers::CONTROL) {
             return Some(Action::Refresh);
         }
 
@@ -1673,7 +1673,7 @@ impl App {
             }
 
             // Toggle star on the open conversation
-            KeyCode::F(2) => {
+            KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.toggle_star_focused();
                 None
             }
@@ -2170,13 +2170,13 @@ impl App {
                 self.toggle_workspace_filter();
                 None
             }
-            // F2: toggle star on the focused row
-            KeyCode::F(2) => {
+            // Ctrl+S: toggle star on the focused row
+            KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.toggle_star_focused();
                 None
             }
-            // F3: toggle "show only starred" filter
-            KeyCode::F(3) => {
+            // Alt+S: toggle "show only starred" filter
+            KeyCode::Char('s') if modifiers.contains(KeyModifiers::ALT) => {
                 self.toggle_starred_filter();
                 None
             }

@@ -126,7 +126,7 @@ pub fn footer_line(theme: &Theme, state: &FooterState<'_>, compact: bool) -> Lin
                 Span::styled(" view    ", desc),
                 Span::styled("^R", key),
                 Span::styled(" resume    ", desc),
-                Span::styled("F5", key),
+                Span::styled("^L", key),
                 Span::styled(" refresh    ", desc),
                 Span::styled("?", key),
                 Span::styled(" help", desc),
@@ -1289,8 +1289,8 @@ fn render_help_overlay(
             ("p".into(), "Show file path"),
             ("Y".into(), "Copy path"),
             ("I".into(), "Copy session ID"),
-            ("F2".into(), "Toggle ★ star on this conversation"),
-            ("F5".into(), "Reload list + current viewer from disk"),
+            ("Ctrl+S".into(), "Toggle ★ star on this conversation"),
+            ("Ctrl+L".into(), "Reload list + current viewer from disk"),
             (keys.resume.help_label(), primary_resume_label),
             (keys.resume_alt.help_label(), alt_resume_label),
             (keys.fork.help_label(), primary_fork_label),
@@ -1312,9 +1312,9 @@ fn render_help_overlay(
             ("Enter".into(), "Open viewer"),
             ("Ctrl+O".into(), "Select and exit"),
             ("Ctrl+W".into(), "Delete word"),
-            ("F2".into(), "Toggle ★ star on selected"),
-            ("F3".into(), "Show only starred sessions"),
-            ("F5".into(), "Reload conversation list from disk"),
+            ("Ctrl+S".into(), "Toggle ★ star on selected"),
+            ("Alt+S".into(), "Show only starred sessions"),
+            ("Ctrl+L".into(), "Reload conversation list from disk"),
             (keys.resume.help_label(), primary_resume_label),
             (keys.resume_alt.help_label(), alt_resume_label),
             (keys.fork.help_label(), primary_fork_label),
@@ -1699,7 +1699,7 @@ mod footer_tests {
     fn list_idle_has_all_six_key_hints() {
         let line = footer_line(&theme(), &FooterState::ListIdle, false);
         let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        for hint in ["↑↓", "/", "⏎", "^R", "F5", "?"] {
+        for hint in ["↑↓", "/", "⏎", "^R", "^L", "?"] {
             assert!(
                 rendered.contains(hint),
                 "missing hint {:?} in {:?}",
@@ -1714,7 +1714,7 @@ mod footer_tests {
         let line = footer_line(&theme(), &FooterState::Viewer, false);
         let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(!rendered.contains("^R"));
-        assert!(!rendered.contains("F5"));
+        assert!(!rendered.contains("^L"));
         assert!(rendered.contains("e copy"));
         assert!(rendered.contains("r rename"));
     }
@@ -1748,9 +1748,9 @@ mod footer_tests {
         for hint in ["↑↓", "/", "⏎", "?"] {
             assert!(rendered.contains(hint), "compact should keep {:?}", hint);
         }
-        // Compact omits: ^R, F5, "resume", "refresh"
+        // Compact omits: ^R, ^L, "resume", "refresh"
         assert!(!rendered.contains("^R"));
-        assert!(!rendered.contains("F5"));
+        assert!(!rendered.contains("^L"));
         assert!(!rendered.contains("resume"));
         assert!(!rendered.contains("refresh"));
     }
