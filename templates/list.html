@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}conversations — ccmanager{% endblock %}
+
+{% block nav %}
+<form class="search-form" role="search"
+      hx-get="/conversations"
+      hx-trigger="keyup changed delay:250ms, search"
+      hx-target="#results"
+      hx-swap="innerHTML"
+      hx-replace-url="true">
+    <input class="search-input"
+           type="search"
+           name="q"
+           value="{{ q }}"
+           placeholder="search conversations…"
+           autocomplete="off"
+           autofocus />
+    <span class="result-count">{{ total }}</span>
+</form>
+{% endblock %}
+
+{% block content %}
+<section id="results" class="conv-list">
+    {% include "list_rows.html" %}
+</section>
+{% endblock %}

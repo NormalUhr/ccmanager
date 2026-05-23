@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}{{ header.title }} — ccmanager{% endblock %}
+
+{% block nav %}
+<div class="viewer-header">
+    <a class="back" href="/conversations"
+       onclick="if (window.navigateBackToList) { event.preventDefault(); window.navigateBackToList(); }"
+       title="back to list (Cmd+[)">← list</a>
+    <div class="viewer-title">
+        {% if let Some(t) = header.custom_title %}
+            <span class="custom-title">{{ t }}</span>
+        {% else %}
+            <span class="session-id mono">{{ header.session_id }}</span>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="viewer-meta">
+    {% if let Some(proj) = header.project %}
+        <span class="project">{{ proj }}</span>
+        <span class="dot">·</span>
+    {% endif %}
+    {% if let Some(model) = header.model %}
+        <span class="model">{{ model }}</span>
+        <span class="dot">·</span>
+    {% endif %}
+    <span class="msg-count">{{ header.message_count }} msgs</span>
+    <span class="dot">·</span>
+    <span class="tokens">{{ header.total_tokens }} tokens</span>
+</section>
+
+<section class="viewer-controls">
+    <form class="toggles" method="get" action="">
+        <label>tools
+            <select name="tools" onchange="this.form.submit()">
+                <option value="off" {% if opts.tools.as_str() == "off" %}selected{% endif %}>off</option>
+                <option value="trn" {% if opts.tools.as_str() == "trn" %}selected{% endif %}>truncated</option>
+                <option value="full" {% if opts.tools.as_str() == "full" %}selected{% endif %}>full</option>
+            </select>
+        </label>
+        <label>thinking
+            <input type="checkbox" name="thinking" value="1"
+                   {% if opts.thinking %}checked{% endif %}
+                   onchange="this.form.submit()" />
+        </label>
+        <label>timing
+            <input type="checkbox" name="timing" value="1"
+                   {% if opts.timing %}checked{% endif %}
+                   onchange="this.form.submit()" />
+        </label>
+        <label>questions only
+            <input type="checkbox" name="questions_only" value="1"
+                   {% if opts.questions_only %}checked{% endif %}
+                   onchange="this.form.submit()" />
+        </label>
+    </form>
+    <div class="actions">
+        <details class="action-menu">
+            <summary class="btn" title="Copy a `claude --resume` command to clipboard">
+                copy resume cmd ▾
+            </summary>
+            <div class="action-menu-items">
+                <button type="button"
+                        data-copy="{{ header.resume_cmd_skip }}"
+                        title="Resume without permission prompts (fast)">
+                    skip permissions (fast)
+                </button>
+                <button type="button"
+                        data-copy="{{ header.resume_cmd_safe }}"
+                        title="Resume with the standard permission flow">
+                    standard (with prompts)
+                </button>
+            </div>
+        </details>
+        <details class="action-menu">
+            <summary class="btn">export ▾</summary>
+            <div class="action-menu-items">
+                <a href="/conversations/{{ header.session_id }}/export.md">Markdown</a>
+                <a href="/conversations/{{ header.session_id }}/export.txt">Plain text</a>
+                <a href="/conversations/{{ header.session_id }}/export.ledger">Ledger</a>
+                <a href="/conversations/{{ header.session_id }}/export.jsonl">JSONL (raw)</a>
+            </div>
+        </details>
+        {% if !read_only %}
+        <details class="action-menu">
+            <summary class="btn">rename ▾</summary>
+            <form class="rename-form"
+                  method="post"
+                  action="/conversations/{{ header.session_id }}/rename">
+                <input type="text"
+                       name="title"
+                       value="{% if let Some(t) = header.custom_title %}{{ t }}{% endif %}"
+                       placeholder="custom title (empty to clear)" />
+                <button class="btn" type="submit">save</button>
+            </form>
+        </details>
+        <details class="action-menu danger">
+            <summary class="btn">delete ▾</summary>
+            <form class="rename-form"
+                  method="post"
+                  action="/conversations/{{ header.session_id }}/delete"
+                  onsubmit="return confirm('Type the session ID to confirm deletion.');">
+                <input type="text"
+                       name="confirm"
+                       placeholder="paste session id to confirm" />
+                <button class="btn danger" type="submit">delete forever</button>
+            </form>
+        </details>
+        {% endif %}
+    </div>
+</section>
+
+<section class="conv-view">
+    {% include "viewer_transcript.html" %}
+</section>
+{% endblock %}

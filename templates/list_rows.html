@@ -1,0 +1,29 @@
+{% if rows.is_empty() %}
+    <p class="empty-state">no conversations match <code>{{ q }}</code>.</p>
+{% else %}
+    {% for row in rows %}
+    <a class="conv-row" href="{{ row.relative_url }}">
+        <div class="conv-row-head">
+            <span class="age">{{ row.age_short }}</span>
+            {% if let Some(proj) = row.project_name %}
+                <span class="project">{{ proj }}</span>
+            {% endif %}
+            {% if let Some(title) = row.custom_title %}
+                <span class="custom-title">· {{ title }}</span>
+            {% endif %}
+        </div>
+        <div class="conv-row-meta">
+            {% if let Some(model) = row.model %}
+                <span class="model">{{ model }}</span>
+                <span class="dot">·</span>
+            {% endif %}
+            <span class="msg-count">{{ row.message_count }} msgs</span>
+            <span class="dot">·</span>
+            <span class="tokens">{{ row.total_tokens }} tokens</span>
+        </div>
+        {% if !row.preview.is_empty() %}
+        <div class="conv-row-preview">{{ row.preview }}</div>
+        {% endif %}
+    </a>
+    {% endfor %}
+{% endif %}

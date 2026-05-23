@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussion / general question
+    url: https://github.com/NormalUhr/ccmanager/discussions
+    about: Use Discussions for "how do I…", "is this expected?", or open-ended ideas.
