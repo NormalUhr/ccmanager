@@ -75,7 +75,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         # Uses the workflow's built-in GITHUB_TOKEN (granted via the
         # `permissions: contents: write` above). No external secret
         # needed for the first release.
