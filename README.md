@@ -9,173 +9,119 @@ conversation history.
 
 `ccmanager` reads the `.jsonl` transcripts Claude Code writes under
 `~/.claude/projects/` and gives you a fast TUI to **search**, **view**,
-**rename**, **delete**, **export**, and **resume** them. It also ships a
-local **web UI** with the same data, and an **MCP stdio server** so
-Claude Code itself can search its own history when you ask it to.
+**star**, **rename**, **delete**, **export**, and **resume** them. It
+also ships a local **web UI** with the same data, and an **MCP stdio
+server** so Claude Code itself can search its own history when you ask
+it to.
 
 Everything is local. No network calls, no account, no telemetry.
 
 ## Install
 
-**One-line install** (recommended — downloads the prebuilt binary for
-your platform from the latest GitHub release):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/NormalUhr/ccmanager/main/scripts/install.sh | bash
-```
-
-Supports macOS (Intel + Apple Silicon) and Linux (x86_64). The
-installer writes the binary to `/usr/local/bin/ccmanager` when
-`/usr/local/bin` is writable; otherwise it falls back to
-`~/.local/bin/ccmanager` and automatically appends the right
-`export PATH=…` line to your shell's rc file (`~/.zshrc`,
-`~/.bashrc` / `~/.bash_profile`, or `~/.config/fish/config.fish` —
-detected from `$SHELL`). It's idempotent: re-running the install
-won't double-add the PATH line.
-
-If the install changed your PATH, the script's last line tells you
-exactly how to make `ccmanager` available right now in your current
-shell. Two choices:
-
-```sh
-exec $SHELL          # restart your shell (simplest)
-# or
-source ~/.zshrc      # source the file the script just edited
-```
-
-After that, just run `ccmanager`.
-
-If you'd rather do it as one chained command:
-
 ```sh
 curl -fsSL https://raw.githubusercontent.com/NormalUhr/ccmanager/main/scripts/install.sh | bash && exec $SHELL
 ```
 
-— installs, then re-execs your shell so `ccmanager` is on PATH for the
-next command.
+If `ccmanager` isn't found afterward, just restart your shell.
 
-### From source
-
-If you'd rather build from source, or you're on a platform the
-prebuilt binaries don't cover:
+Update with:
 
 ```sh
-git clone https://github.com/NormalUhr/ccmanager.git
-cd ccmanager
-cargo install --path . --locked
+ccmanager update
 ```
 
-This drops a `ccmanager` binary at `~/.cargo/bin/`. On Linux you also
-need the X11 clipboard headers `arboard` links against —
-`libxcb-shape0-dev libxcb-render0-dev libxcb-xfixes0-dev` on
-Debian/Ubuntu, `libxcb-devel` on Fedora/RHEL.
-
-### Air-gapped install (no internet on the target machine)
-
-Vendor every Cargo dependency once on a machine that has internet, then
-build offline on the server.
-
-On the internet-connected machine:
-
-```sh
-cd ccmanager
-cargo vendor --locked > .cargo/config.toml
-cd .. && tar --exclude='ccmanager/target' --exclude='ccmanager/.git' \
-              -czf ccmanager-offline.tar.gz ccmanager
-```
-
-Transfer `ccmanager-offline.tar.gz` to the server (scp / USB / internal
-mirror). Then on the server (with rustc ≥ 1.85 and the clipboard libs
-above):
-
-```sh
-tar -xzf ccmanager-offline.tar.gz
-cd ccmanager
-cargo build --release --offline --locked
-install -m 755 target/release/ccmanager ~/.local/bin/ccmanager
-```
-
-If the server has no Rust toolchain either, also ship the matching
-`rust-<version>-<triple>.tar.gz` from <https://static.rust-lang.org/dist/>
-and run its `./install.sh --prefix="$HOME/.local"` first.
+Prefer to build from source, or install on an air-gapped machine? See
+[Other install methods](#other-install-methods) below.
 
 ## Quick start
 
 ```sh
 ccmanager                          # browse all conversations
 ccmanager -L                       # only conversations from the current project
-ccmanager --resume                 # pick one and resume it in Claude Code
-ccmanager <path/to/file.jsonl>     # view one transcript directly
 ccmanager serve --open             # local web UI on http://127.0.0.1:7878
-ccmanager mcp                      # MCP stdio server (for Claude Code itself)
 ```
 
-In the TUI, type to fuzzy-search. `Enter` opens the viewer; `Ctrl+R`
-resumes the selected conversation in a new terminal tab; `?` shows all
-keybindings; `q`/`Esc` goes back or quits. Mouse-wheel scrolls the
-list; mouse clicks are intentionally not bound (use `Enter`).
+In the TUI, type to fuzzy-search. `enter` opens the viewer; `ctrl+r`
+resumes a session in a new terminal tab; `?` shows all keybindings.
 
-## The list
+## Common scenarios
 
-```
-╭─ ◈ ccmanager · all projects · 47 sessions ──────────────╮
-│  search ▸ deploy                                         │
-│ ────────────────────────────────────────────────────── │
-│   1 ▌ ccmanager  Add F5 refresh         47msg · 2h ago  │
-│       how do I get F5 to reload conversations live, w… │
-│     ────────────────────────────────────────────────── │
-│   2   work       Deploy strategy      23msg · yesterday │
-│       should we deploy on Tuesday or wait for the rele… │
-│     ────────────────────────────────────────────────── │
-│ ...                                                      │
-╰─ ↑↓ nav  · / search  · ⏎ view  · ^R resume  · ? help ──╯
-```
+**Find a past session.** Just type. Search matches project name,
+session title, custom alias, and conversation text — all at once.
 
-Each row carries a session **ID** (`1`, `2`, …), the project name,
-the conversation title, and a metadata column (`<N>msg · <age>`)
-right-aligned to the frame. The dim line beneath each title is the
-**start of the most recent user message** in that conversation — at a
-glance, "what was I asking?". A thin rule separates entries.
+**Show only this project's sessions.** `ccmanager -L` from the project
+directory, or hit `tab` inside the TUI to toggle.
 
-Type a query and the title + project highlight in the accent color
-live as you type. The session count in the top title strip switches
-to `5 / 47 sessions match` so you always know how filtered the view
-is.
+**Star a session so you can find it later.** Hover the row in the
+list (or open it in the viewer) and press `f2`. Press `f2` again to
+unstar. A `★` shows up in the leftmost column.
 
-The selected row stays visible inside the viewport as you move — the
-cursor walks freely through the visible area, and the page only
-scrolls when the cursor crosses the top or bottom edge.
+**Show only starred sessions.** `f3`. Press again to clear. Stacks
+with the project filter and the search query.
+
+**Give a session a memorable alias.** Focus it, press `r`, type a
+name. The alias shows in the list header and is fuzzy-searchable.
+
+**Open and read a session.** `enter`. Scroll with `↑` `↓` or `j` `k`.
+
+**Skim just my questions** (skip Claude's answers). In the viewer,
+press `shift+q`.
+
+**Search inside an open session.** `/` then type. `n` / `shift+n`
+jump to the next / previous match.
+
+**Resume a session** in a new terminal tab. `ctrl+r`. Use `alt+r` if
+you want the standard tool-permission prompts instead of the
+skip-permissions default.
+
+**Fork off a session** instead of resuming. `ctrl+f` — creates a new
+session ID branched from the same starting point.
+
+**Copy one message.** In the viewer, jump to it with `shift+j` /
+`shift+k`, then press `y`.
+
+**Export the whole dialogue.** `e`, then pick a format: Ledger /
+Plain / Markdown / JSONL. Tool calls and thinking blocks are filtered
+out of the readable formats.
+
+**Refresh to pick up a message Claude Code just wrote** in another
+tab. `f5`. Your search query, filter, and selection are preserved.
+
+**Delete a session.** Focus it, `ctrl+x`, confirm.
 
 ## Keys at a glance
 
-The full table is in the `?` overlay. The ones you'll use every day:
+The full table is in the `?` overlay. Uppercase letters always mean
+"hold shift" — lowercase never does.
 
 | Key | What it does |
 |---|---|
-| Type | Fuzzy-search across all conversations |
-| `↑↓` / `jk` | Move selection (list) / scroll (viewer) |
-| `Enter` | Open viewer |
-| `Ctrl+R` / `Alt+R` | Resume conversation in a new tab (fast / with permission prompts) |
-| `Ctrl+F` / `Alt+F` | Same, but fork — branches off a new session ID |
-| `F5` | Reload list and current viewer from disk |
-| `e` | Copy whole conversation to clipboard (format menu) |
-| `y` | Copy focused message (in nav mode) or open the format menu |
-| `Y` / `I` / `p` | Copy file path / copy session ID / show path |
-| `r` | Rename — sets a custom title shown in the list |
-| `Ctrl+X` | Delete conversation (with confirm) |
-| `t` / `T` / `i` | Tool display (off/trunc/full) / thinking / timestamps |
-| `Q` | Questions-only view (hide Claude's answers) |
-| `Tab` | Toggle all-projects ↔ current-project filter |
-| `/` then type | Start in-viewer search; auto-jumps to first match |
-| `Enter` (after `/`) | Confirm search; switches to nav mode |
-| `n` / `N` | Next / previous match (vim-style) |
-| `J` `K` `[` `]` | Jump between messages |
+| (just type) | Fuzzy-search across all conversations |
+| `↑` `↓` / `j` `k` | Move selection (list) / scroll (viewer) |
+| `enter` | Open viewer |
+| `tab` | Toggle all-projects ↔ current-project filter |
+| `f2` | Star / unstar the focused (or open) session |
+| `f3` | Toggle starred-only filter |
+| `f5` | Reload list + viewer from disk |
+| `ctrl+r` / `alt+r` | Resume in a new tab (fast / with permission prompts) |
+| `ctrl+f` / `alt+f` | Fork — branch a new session ID |
+| `r` | Rename — set a custom alias |
+| `ctrl+x` | Delete (with confirm) |
+| `e` | Copy whole conversation (format menu) |
+| `y` | Copy focused message (after `shift+j` / `shift+k`), or open format menu |
+| `shift+y` / `shift+i` / `p` | Copy file path / copy session ID / show path |
+| `t` / `shift+t` / `i` | Tool display (off / truncated / full) / thinking / timestamps |
+| `shift+q` | Questions-only view (hide Claude's answers) |
+| `/` then type | In-viewer search; auto-jumps to first match |
+| `enter` (after `/`) | Confirm search; switch to nav mode |
+| `n` / `shift+n` | Next / previous match |
+| `shift+j` / `shift+k` / `[` / `]` | Jump between messages |
 | `?` | Help overlay |
-| `q` / `Esc` | Back / quit |
+| `q` / `esc` | Back / quit |
 
 ## Resuming conversations
 
-`Ctrl+R` opens a new tab in your **current** terminal window running
+`ctrl+r` opens a new tab in your **current** terminal window running
 `claude --resume <id>`, switches focus to it, and leaves the
 `ccmanager` TUI running in the original tab (returning to the list).
 
@@ -195,11 +141,11 @@ even when `ccmanager` was launched from outside the project folder.
 
 By default the resume passes `--dangerously-skip-permissions` (Claude
 won't re-ask about every tool, which matches the common case of
-continuing work you'd already approved). Use `Alt+R` for the standard
+continuing work you'd already approved). Use `alt+r` for the standard
 permission flow, or set `[resume].skip_permissions = false` in the
 config to flip the default.
 
-`Ctrl+F` forks instead — creates a new session ID that branches from
+`ctrl+f` forks instead — creates a new session ID that branches from
 the original transcript. When the conversation's original project
 directory no longer exists or you fork cross-project, the session
 files are first **copied** into your CWD's project directory so
@@ -209,17 +155,17 @@ The CLI flag `ccmanager --resume` is different from the TUI key: it
 **replaces the current process** with `claude --resume <id>` via
 `execvp`, which is what shell scripts and aliases want.
 
-## Live refresh (`F5`)
+## Live refresh (`f5`)
 
 Keep a `ccmanager` window open while a separate Claude Code session
-keeps appending turns to disk. Hit `F5` and `ccmanager` re-scans
+keeps appending turns to disk. Hit `f5` and `ccmanager` re-scans
 `~/.claude/projects/` and re-renders the active viewer in place. No
 quit-and-relaunch.
 
 Preserved across refresh: the search query, the workspace filter
-(`Tab`), the view-mode toggles (`t`/`T`/`i`/`Q`), and the
-selected-or-open conversation (re-selected by file path, with a
-sensible fallback if the file is gone).
+(`tab`), the view-mode toggles (`t` / `shift+t` / `i` / `shift+q`),
+and the selected-or-open conversation (re-selected by file path, with
+a sensible fallback if the file is gone).
 
 ## Export and clipboard
 
@@ -229,9 +175,9 @@ written to your cwd. Paste with `Cmd+V` / `Ctrl+V`.
 | Key | What it copies |
 |---|---|
 | `e` | Whole conversation. Opens a format menu: **Ledger** (formatted, speaker-prefixed), **Plain** (`You:` / `Claude:` lines), **Markdown** (`## You` / `## Claude`), or **JSONL** (raw). For the three readable formats, tool calls / thinking / intermediate narration are filtered out so what you paste is just the dialogue. |
-| `y` | In message-nav mode (after `J`/`K`): the focused message as raw markdown. Otherwise: opens the same format menu as `e`. |
-| `Y` | The conversation file's full path on disk. |
-| `I` | The session UUID. |
+| `y` | In message-nav mode (after `shift+j` / `shift+k`): the focused message as raw markdown. Otherwise: opens the same format menu as `e`. |
+| `shift+y` | The conversation file's full path on disk. |
+| `shift+i` | The session UUID. |
 | `p` | Prints the file path into the status bar (no copy). |
 
 For a file instead of the clipboard, pipe `ccmanager --plain` to one:
@@ -305,7 +251,7 @@ Optional. Create `~/.config/ccmanager/config.toml` with any subset of:
 
 [resume]
 # default_args = ["--dangerously-skip-permissions"]
-# skip_permissions = true    # Ctrl+R uses --dangerously-skip-permissions
+# skip_permissions = true    # ctrl+r uses --dangerously-skip-permissions
 
 [keys]
 # resume = "ctrl+r"          # primary resume binding
@@ -320,14 +266,59 @@ keep Claude's data in a non-default location.
 
 For the full flag list: `ccmanager --help`.
 
-## Updating
+## Other install methods
+
+### From source
 
 ```sh
-ccmanager update          # downloads the latest GitHub release for your platform
-brew upgrade ccmanager    # if installed via Homebrew
+git clone https://github.com/NormalUhr/ccmanager.git
+cd ccmanager
+cargo install --path . --locked
 ```
 
-The self-updater refuses to overwrite a Homebrew-managed install.
+This drops a `ccmanager` binary at `~/.cargo/bin/`. On Linux you also
+need the X11 clipboard headers `arboard` links against —
+`libxcb-shape0-dev libxcb-render0-dev libxcb-xfixes0-dev` on
+Debian/Ubuntu, `libxcb-devel` on Fedora/RHEL.
+
+### Air-gapped install (no internet on the target machine)
+
+Vendor every Cargo dependency once on a machine that has internet, then
+build offline on the server.
+
+On the internet-connected machine:
+
+```sh
+cd ccmanager
+cargo vendor --locked > .cargo/config.toml
+cd .. && tar --exclude='ccmanager/target' --exclude='ccmanager/.git' \
+              -czf ccmanager-offline.tar.gz ccmanager
+```
+
+Transfer `ccmanager-offline.tar.gz` to the server (scp / USB / internal
+mirror). Then on the server (with rustc ≥ 1.85 and the clipboard libs
+above):
+
+```sh
+tar -xzf ccmanager-offline.tar.gz
+cd ccmanager
+cargo build --release --offline --locked
+install -m 755 target/release/ccmanager ~/.local/bin/ccmanager
+```
+
+If the server has no Rust toolchain either, also ship the matching
+`rust-<version>-<triple>.tar.gz` from <https://static.rust-lang.org/dist/>
+and run its `./install.sh --prefix="$HOME/.local"` first.
+
+## Changelog
+
+| Version | Released | Highlights |
+|---|---|---|
+| [1.1.1](https://github.com/NormalUhr/ccmanager/releases/tag/v1.1.1) | 2026-05-23 13:04 PDT | New warm Claude-orange palette across TUI + web UI; lifted gray-text contrast in both light and dark modes. |
+| [1.1.0](https://github.com/NormalUhr/ccmanager/releases/tag/v1.1.0) | 2026-05-23 11:43 PDT | Star / favorite sessions (`f2`) and starred-only filter (`f3`); persisted as JSONL markers. |
+| [1.0.0](https://github.com/NormalUhr/ccmanager/releases/tag/v1.0.0) | 2026-05-22 18:03 PDT | First public release. TUI + web UI + MCP server; rename, delete, export, resume, fork. |
+
+Full notes per release: [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
