@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CACHE_MAGIC: [u8; 8] = *b"CLHIST01";
 // Bump on every Conversation/CacheEntry layout change so stale binary
 // caches are rebuilt — bincode isn't self-describing.
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize)]
 struct ProjectCache {
@@ -50,6 +50,8 @@ pub struct CacheEntry {
     pub timestamp_epoch_ms: i64,
     #[serde(default)]
     pub last_user_question: Option<String>,
+    #[serde(default)]
+    pub starred: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -149,6 +151,7 @@ pub fn empty_entry(file_size: u64, mtime: SystemTime) -> CacheEntry {
         duration_minutes: None,
         timestamp_epoch_ms: 0,
         last_user_question: None,
+        starred: false,
     }
 }
 
@@ -188,6 +191,7 @@ pub fn entry_from_conversation(
         duration_minutes: conv.duration_minutes,
         timestamp_epoch_ms: conv.timestamp.timestamp_millis(),
         last_user_question: conv.last_user_question.clone(),
+        starred: conv.starred,
     }
 }
 
@@ -232,6 +236,7 @@ pub fn conversation_from_entry(entry: &CacheEntry, path: PathBuf, show_last: boo
         total_tokens: entry.total_tokens,
         duration_minutes: entry.duration_minutes,
         last_user_question: entry.last_user_question.clone(),
+        starred: entry.starred,
     }
 }
 
@@ -271,6 +276,7 @@ mod tests {
             total_tokens: 1500,
             duration_minutes: Some(10),
             last_user_question: Some("test question".to_string()),
+            starred: false,
         }
     }
 

@@ -296,6 +296,9 @@ pub struct App {
     workspace_filter: bool,
     /// The encoded project directory name for the current workspace (for filtering)
     current_project_dir_name: Option<String>,
+    /// Whether the "show only starred" filter is active. Toggled with `S`
+    /// in list mode. Composes with `workspace_filter` and `query`.
+    starred_filter: bool,
     /// Channel to send commands to the background search worker
     search_tx: mpsc::Sender<SearchCommand>,
     /// Channel to receive results from the background search worker
@@ -359,6 +362,7 @@ impl App {
             default_skip_permissions,
             workspace_filter: false,
             current_project_dir_name: None,
+            starred_filter: false,
             search_tx,
             search_rx,
             search_generation: 0,
@@ -398,6 +402,7 @@ impl App {
             default_skip_permissions,
             workspace_filter,
             current_project_dir_name,
+            starred_filter: false,
             search_tx,
             search_rx,
             search_generation: 0,
@@ -472,6 +477,7 @@ impl App {
             default_skip_permissions,
             workspace_filter: false,
             current_project_dir_name: None,
+            starred_filter: false,
             search_tx,
             search_rx,
             search_generation: 0,
@@ -665,6 +671,11 @@ impl App {
             });
         }
 
+        // Apply starred filter if active
+        if self.starred_filter {
+            filtered.retain(|&idx| self.conversations[idx].starred);
+        }
+
         self.filtered = filtered;
         self.selected = if self.filtered.is_empty() {
             None
@@ -709,7 +720,15 @@ impl App {
         while let Ok(response) = self.search_rx.try_recv() {
             // Only apply the result if it matches the latest generation
             if response.generation == self.search_generation {
-                self.filtered = response.filtered;
+                let mut filtered = response.filtered;
+                // The search worker already applied the workspace filter
+                // (via SearchCommand::Search). The star filter is applied
+                // here on the main thread so we don't have to widen the
+                // worker's protocol.
+                if self.starred_filter {
+                    filtered.retain(|&idx| self.conversations[idx].starred);
+                }
+                self.filtered = filtered;
                 self.selected = if self.filtered.is_empty() {
                     None
                 } else {
@@ -931,6 +950,86 @@ impl App {
         if self.current_project_dir_name.is_some() {
             self.workspace_filter = !self.workspace_filter;
             self.update_filter();
+        }
+    }
+
+    /// Whether the "show only starred" filter is currently active.
+    pub fn starred_filter(&self) -> bool {
+        self.starred_filter
+    }
+
+    /// Toggle the "show only starred" filter. Re-applies the search /
+    /// workspace filter on top.
+    fn toggle_starred_filter(&mut self) {
+        self.starred_filter = !self.starred_filter;
+        self.update_filter();
+        // Reset scroll offset so the new filtered set shows from the top.
+        *self.list_state.borrow_mut() = ListState::default();
+        self.list_state.borrow_mut().select(self.selected);
+        let msg = if self.starred_filter {
+            "★ showing starred only".to_string()
+        } else {
+            "showing all conversations".to_string()
+        };
+        self.status_message = Some((msg, std::time::Instant::now()));
+    }
+
+    /// Toggle the starred state of the conversation at `path`. Appends
+    /// a `star` marker to its JSONL and updates the in-memory cache.
+    /// Returns the new starred state on success.
+    fn toggle_star_for(&mut self, path: PathBuf) -> Result<bool> {
+        // Resolve the index in `self.conversations`.
+        let Some(conv_idx) = self.conversations.iter().position(|c| c.path == path) else {
+            return Err(AppError::ClaudeExecutionError(format!(
+                "Conversation not found in list: {}",
+                path.display()
+            )));
+        };
+        let new_starred = !self.conversations[conv_idx].starred;
+
+        // Derive the session id from the filename (matches how every other
+        // caller of write_star_marker derives session ids).
+        let session_id = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            AppError::ClaudeExecutionError(format!(
+                "Conversation filename is not valid Unicode: {}",
+                path.display()
+            ))
+        })?;
+        crate::history::star::write_star_marker(&path, session_id, new_starred)?;
+
+        // Update in-memory cache.
+        self.conversations[conv_idx].starred = new_starred;
+        // If the star filter is active, the row may have just disappeared
+        // (un-starring) or just appeared (starring). Re-apply the filter.
+        if self.starred_filter {
+            self.update_filter();
+        }
+        // Status message confirms the action.
+        let msg = if new_starred {
+            "★ starred".to_string()
+        } else {
+            "unstarred".to_string()
+        };
+        self.status_message = Some((msg, std::time::Instant::now()));
+        Ok(new_starred)
+    }
+
+    /// Toggle the star on the currently focused row (list mode) or open
+    /// conversation (view mode). No-op when nothing is focused.
+    fn toggle_star_focused(&mut self) {
+        let path = match &self.app_mode {
+            AppMode::View(state) => Some(state.conversation_path.clone()),
+            AppMode::List => self
+                .selected
+                .and_then(|sel| self.filtered.get(sel))
+                .map(|&idx| self.conversations[idx].path.clone()),
+        };
+        if let Some(p) = path {
+            // Surface errors as status messages — never bubble out to crash the TUI.
+            if let Err(e) = self.toggle_star_for(p) {
+                self.status_message =
+                    Some((format!("Star failed: {}", e), std::time::Instant::now()));
+            }
         }
     }
 
@@ -1573,6 +1672,12 @@ impl App {
                 None
             }
 
+            // Toggle star on the open conversation
+            KeyCode::F(2) => {
+                self.toggle_star_focused();
+                None
+            }
+
             // Show path
             KeyCode::Char('p') => {
                 if let AppMode::View(ref state) = self.app_mode {
@@ -2063,6 +2168,16 @@ impl App {
             // Tab: toggle workspace/global filter
             KeyCode::Tab => {
                 self.toggle_workspace_filter();
+                None
+            }
+            // F2: toggle star on the focused row
+            KeyCode::F(2) => {
+                self.toggle_star_focused();
+                None
+            }
+            // F3: toggle "show only starred" filter
+            KeyCode::F(3) => {
+                self.toggle_starred_filter();
                 None
             }
             // Open help overlay

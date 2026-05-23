@@ -2,6 +2,26 @@
 
 (Nothing yet — next release goes here.)
 
+## v1.1.0 (2026-05-23)
+
+### Added
+
+- **Star/favorite a session.** Press `F2` from the list view (acts on the
+  hovered row) or from the viewer (acts on the open session) to toggle
+  the star. A `★` glyph appears in a new leftmost column on starred
+  rows.
+- **Starred-only filter.** Press `F3` from the list view to show only
+  starred sessions; press again to clear. Composes cleanly with the
+  workspace filter and the search query — search within starred,
+  resume from starred, delete from starred, all the usual list
+  operations work on the filtered view.
+
+Star state is persisted by appending a `{"type":"star","starred":bool}`
+marker line to the conversation's JSONL file (latest marker wins, same
+durable pattern used by `/rename`). No new state files, no external
+DB. Cache schema bumped to v3; first launch after upgrade rebuilds the
+cache automatically.
+
 ## v1.0.0 (2026-05-23)
 
 First public release of `ccmanager`. Forked from `claude-history`,

@@ -70,6 +70,8 @@ pub(crate) fn process_conversation_reader<R: BufRead>(
     let mut parse_errors: Vec<ParseError> = Vec::new();
     let mut extracted_summary: Option<String> = None;
     let mut extracted_custom_title: Option<String> = None;
+    // Latest `{"type":"star","starred":bool}` wins. Default = not starred.
+    let mut extracted_starred: bool = false;
     let mut extracted_model: Option<String> = None;
     // Track token usage per message ID to avoid double-counting streaming entries
     let mut token_usage_by_msg: HashMap<String, TokenUsage> = HashMap::new();
@@ -234,6 +236,10 @@ pub(crate) fn process_conversation_reader<R: BufRead>(
                             Some(trimmed.to_owned())
                         };
                     }
+                    LogEntry::Star { starred } => {
+                        // User toggled star/unstar; latest wins.
+                        extracted_starred = starred;
+                    }
                     LogEntry::System { .. } => {}
                     _ => {}
                 }
@@ -374,6 +380,7 @@ pub(crate) fn process_conversation_reader<R: BufRead>(
         total_tokens,
         duration_minutes,
         last_user_question: user_messages.last().cloned(),
+        starred: extracted_starred,
     }))
 }
 
@@ -1329,5 +1336,58 @@ mod tests {
             "expected latest cwd to win; got {:?}",
             conv.cwd
         );
+    }
+
+    // === Star marker extraction ===
+
+    #[test]
+    fn star_defaults_to_false_without_marker() {
+        let content = [user_msg("hi", None), assistant_msg("hello")].join("\n");
+        let conv = parse_jsonl(&content).unwrap().unwrap();
+        assert!(!conv.starred, "no star marker should leave starred=false");
+    }
+
+    #[test]
+    fn star_marker_sets_starred_true() {
+        let content = [
+            user_msg("hi", None),
+            assistant_msg("hello"),
+            r#"{"type":"star","starred":true,"sessionId":"abc"}"#.to_string(),
+        ]
+        .join("\n");
+        let conv = parse_jsonl(&content).unwrap().unwrap();
+        assert!(conv.starred, "star marker should set starred=true");
+    }
+
+    #[test]
+    fn latest_star_marker_wins_unstar() {
+        // User stars, then unstars — final state should be false.
+        let content = [
+            user_msg("hi", None),
+            assistant_msg("hello"),
+            r#"{"type":"star","starred":true,"sessionId":"abc"}"#.to_string(),
+            r#"{"type":"star","starred":false,"sessionId":"abc"}"#.to_string(),
+        ]
+        .join("\n");
+        let conv = parse_jsonl(&content).unwrap().unwrap();
+        assert!(
+            !conv.starred,
+            "latest star marker (unstar) should win, got starred=true"
+        );
+    }
+
+    #[test]
+    fn latest_star_marker_wins_re_star() {
+        // User stars, unstars, then stars again — final state should be true.
+        let content = [
+            user_msg("hi", None),
+            assistant_msg("hello"),
+            r#"{"type":"star","starred":true,"sessionId":"abc"}"#.to_string(),
+            r#"{"type":"star","starred":false,"sessionId":"abc"}"#.to_string(),
+            r#"{"type":"star","starred":true,"sessionId":"abc"}"#.to_string(),
+        ]
+        .join("\n");
+        let conv = parse_jsonl(&content).unwrap().unwrap();
+        assert!(conv.starred, "latest star marker (re-star) should win");
     }
 }

@@ -255,7 +255,8 @@ fn render_entry(lines: &mut Vec<RenderedLine>, entry: &LogEntry, options: &Rende
         LogEntry::Summary { .. }
         | LogEntry::FileHistorySnapshot { .. }
         | LogEntry::System { .. }
-        | LogEntry::CustomTitle { .. } => {}
+        | LogEntry::CustomTitle { .. }
+        | LogEntry::Star { .. } => {}
         LogEntry::Progress { data, .. } => {
             // Handle agent_progress entries (only when show_thinking is enabled)
             if options.show_thinking

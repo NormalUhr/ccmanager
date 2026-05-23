@@ -338,9 +338,10 @@ pub fn list_row_lines(
     let id_text = format!("{:>width$}", id, width = id_width);
 
     // Layout widths inside the inner area:
-    //   id (id_width) + gap (1) + glyph (1) + gap (1) + project (10) + gap (2)
-    //   = id_width + 15
-    let left_width: usize = id_width + 15;
+    //   star(1) + gap(1) + id (id_width) + gap (1) + glyph (1) + gap (1)
+    //     + project (10) + gap (2)
+    //   = id_width + 17
+    let left_width: usize = id_width + 17;
     const RIGHT_MARGIN: usize = 1;
 
     let glyph = if selected { "▌" } else { " " };
@@ -358,8 +359,22 @@ pub fn list_row_lines(
         .saturating_sub(used + meta_width + RIGHT_MARGIN)
         .max(1);
 
+    // Star column: ★ in accent when starred, plain space otherwise.
+    let star_span = if conv.starred {
+        Span::styled(
+            "★",
+            Style::default()
+                .fg(rgb(theme.accent))
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(" ", project_style)
+    };
+
     let mut header_spans: Vec<Span<'static>> = vec![
-        Span::styled(id_text, dim),       // NEW — ID column, dim
+        star_span,                        // NEW — star column, accent when starred
+        Span::styled(" ", project_style), // gap after star
+        Span::styled(id_text, dim),       // ID column, dim
         Span::styled(" ", project_style), // 1-col gap after ID
         Span::styled(glyph.to_string(), gutter_style),
         Span::styled(" ", project_style),
@@ -373,7 +388,7 @@ pub fn list_row_lines(
 
     // Separator indent and right-margin computation — shared by both
     // compact and normal-mode separators.
-    let sep_indent = id_width + 2;
+    let sep_indent = id_width + 4;
 
     if compact {
         let sep_line = Line::from(vec![
@@ -387,7 +402,7 @@ pub fn list_row_lines(
     }
 
     // ── Row 2 — preview ──────────────────────────────────────────
-    let preview_indent = id_width + 4;
+    let preview_indent = id_width + 6;
     let preview_max = inner.saturating_sub(preview_indent + RIGHT_MARGIN);
     let preview_text = conv.last_user_question.as_deref().unwrap_or("");
     let preview_truncated = truncate_str(preview_text, preview_max);
@@ -580,7 +595,7 @@ fn render_list_mode(frame: &mut Frame, app: &App) {
     let compact = is_compact_layout(area);
 
     // Header line (idle / search / loading)
-    let scope = if app.workspace_filter() && app.has_project_context() {
+    let scope_workspace = if app.workspace_filter() && app.has_project_context() {
         match app.current_project_dir_name() {
             Some(encoded) => {
                 let path = crate::history::decode_project_dir_name_to_path(encoded);
@@ -591,6 +606,13 @@ fn render_list_mode(frame: &mut Frame, app: &App) {
         }
     } else {
         "all projects".to_string()
+    };
+    // Prepend "★ starred" when the star filter is active so the
+    // user always sees which filters they're under.
+    let scope = if app.starred_filter() {
+        format!("★ starred  ·  {}", scope_workspace)
+    } else {
+        scope_workspace
     };
     let header_state = if app.is_loading() {
         HeaderState::Loading {
@@ -1267,6 +1289,7 @@ fn render_help_overlay(
             ("p".into(), "Show file path"),
             ("Y".into(), "Copy path"),
             ("I".into(), "Copy session ID"),
+            ("F2".into(), "Toggle ★ star on this conversation"),
             ("F5".into(), "Reload list + current viewer from disk"),
             (keys.resume.help_label(), primary_resume_label),
             (keys.resume_alt.help_label(), alt_resume_label),
@@ -1289,6 +1312,8 @@ fn render_help_overlay(
             ("Enter".into(), "Open viewer"),
             ("Ctrl+O".into(), "Select and exit"),
             ("Ctrl+W".into(), "Delete word"),
+            ("F2".into(), "Toggle ★ star on selected"),
+            ("F3".into(), "Show only starred sessions"),
             ("F5".into(), "Reload conversation list from disk"),
             (keys.resume.help_label(), primary_resume_label),
             (keys.resume_alt.help_label(), alt_resume_label),
@@ -1820,6 +1845,7 @@ mod list_row_tests {
             total_tokens: 0,
             duration_minutes: None,
             last_user_question: Some(format!("question text for {}", title)),
+            starred: false,
         }
     }
 
@@ -1980,8 +2006,8 @@ mod list_row_tests {
         );
         let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            header.starts_with("  1 "),
-            "expected `\"  1 \"` prefix (right-aligned ID, then space), got: {:?}",
+            header.starts_with("    1 "),
+            "expected `\"    1 \"` prefix (star col + gap + right-aligned ID + gap), got: {:?}",
             header
         );
     }
@@ -2001,8 +2027,8 @@ mod list_row_tests {
         );
         let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            header.starts_with(" 42 "),
-            "expected `\" 42 \"` prefix, got: {:?}",
+            header.starts_with("   42 "),
+            "expected `\"   42 \"` prefix, got: {:?}",
             header
         );
     }
@@ -2022,8 +2048,8 @@ mod list_row_tests {
         );
         let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            header.starts_with("999 "),
-            "expected `\"999 \"` prefix, got: {:?}",
+            header.starts_with("  999 "),
+            "expected `\"  999 \"` prefix, got: {:?}",
             header
         );
     }
@@ -2045,9 +2071,10 @@ mod list_row_tests {
             /* id_width = */ 1,
         );
         let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        // Layout: " " (star col) + " " (gap) + "7" (id_width=1) + " " (gap) = "  7 "
         assert!(
-            header.starts_with("7 "),
-            "expected `\"7 \"` prefix at id_width=1, got: {:?}",
+            header.starts_with("  7 "),
+            "expected `\"  7 \"` prefix at id_width=1 (star col + gap + id + gap), got: {:?}",
             header
         );
         // Verify the header still fits within inner_width.
@@ -2057,6 +2084,92 @@ mod list_row_tests {
             "header overflows at id_width=1: {} cols, content: {:?}",
             display_width,
             header
+        );
+    }
+
+    // === Star column tests ===
+
+    #[test]
+    fn unstarred_row_starts_with_space_in_star_column() {
+        let conv = make_conv("ccmanager", "Add F5 refresh", 120, 47);
+        // conv.starred defaults to false in make_conv
+        let lines = list_row_lines(
+            &Theme::dark(),
+            &conv,
+            /* selected = */ false,
+            /* query    = */ "",
+            /* compact  = */ false,
+            /* inner_width = */ 80,
+            /* id       = */ 1,
+            /* id_width = */ 3,
+        );
+        let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        // First two chars: space (star col) + space (gap). So "    1 " total
+        // (2 spaces of star+gap + 3 chars of id + 1 gap = 6 chars before the glyph).
+        assert!(
+            header.starts_with("    1 "),
+            "expected `\"    1 \"` prefix for unstarred row, got: {:?}",
+            header
+        );
+        // Explicitly confirm no star char anywhere in the row.
+        assert!(
+            !header.contains("★"),
+            "unstarred row must not contain ★, got: {:?}",
+            header
+        );
+    }
+
+    #[test]
+    fn starred_row_starts_with_star_glyph() {
+        let mut conv = make_conv("ccmanager", "Add F5 refresh", 120, 47);
+        conv.starred = true;
+        let lines = list_row_lines(
+            &Theme::dark(),
+            &conv,
+            /* selected = */ false,
+            /* query    = */ "",
+            /* compact  = */ false,
+            /* inner_width = */ 80,
+            /* id       = */ 1,
+            /* id_width = */ 3,
+        );
+        let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        // Star at position 0, then gap, then id.
+        assert!(
+            header.starts_with("★   1 "),
+            "expected `\"★   1 \"` prefix for starred row, got: {:?}",
+            header
+        );
+    }
+
+    #[test]
+    fn star_state_does_not_change_header_display_width() {
+        // The star column is 1 col wide whether starred (★) or not (space).
+        // Total header width must be identical so column alignment holds.
+        let mut conv_unstarred = make_conv("ccmanager", "Add F5 refresh", 120, 47);
+        conv_unstarred.starred = false;
+        let mut conv_starred = make_conv("ccmanager", "Add F5 refresh", 120, 47);
+        conv_starred.starred = true;
+
+        let lines_a = list_row_lines(&Theme::dark(), &conv_unstarred, false, "", false, 80, 1, 3);
+        let lines_b = list_row_lines(&Theme::dark(), &conv_starred, false, "", false, 80, 1, 3);
+
+        let header_a: String = lines_a[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        let header_b: String = lines_b[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(
+            unicode_width::UnicodeWidthStr::width(header_a.as_str()),
+            unicode_width::UnicodeWidthStr::width(header_b.as_str()),
+            "star vs space must occupy same display width\nunstarred: {:?}\nstarred:   {:?}",
+            header_a,
+            header_b
         );
     }
 }

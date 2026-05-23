@@ -16,6 +16,7 @@ mod loader;
 mod parser;
 pub mod path;
 pub mod rename;
+pub mod star;
 
 use crate::error::{AppError, Result};
 use chrono::{DateTime, Local};
@@ -80,6 +81,10 @@ pub struct Conversation {
     /// preview line in the TUI list ("start of the last question").
     /// `None` for conversations with zero user messages.
     pub last_user_question: Option<String>,
+    /// Whether the user has starred this conversation. Persisted in
+    /// the JSONL via `{"type":"star","starred":bool,…}` entries —
+    /// latest one wins. Default `false`.
+    pub starred: bool,
 }
 
 pub struct Project {

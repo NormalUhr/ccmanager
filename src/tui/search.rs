@@ -447,6 +447,7 @@ mod tests {
             total_tokens: 0,
             duration_minutes: None,
             last_user_question: None,
+            starred: false,
         }
     }
 

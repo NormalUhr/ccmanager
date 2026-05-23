@@ -68,6 +68,12 @@ pub enum LogEntry {
         #[serde(rename = "customTitle")]
         custom_title: String,
     },
+    /// Marker for whether the user has starred / unstarred this
+    /// conversation. Written by ccmanager when the user presses `s`.
+    /// Multiple entries may appear; the latest one wins.
+    Star {
+        starred: bool,
+    },
 }
 
 #[derive(Debug, Deserialize)]
