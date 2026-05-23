@@ -2,6 +2,22 @@
 
 (Nothing yet — next release goes here.)
 
+## v1.1.1 (2026-05-23)
+
+### Changed
+
+- **New color palette.** Replaced the cool-blue (TUI) and teal (web)
+  signature colors with Claude Code's warm orange. Same hue family in
+  both UIs, tuned per background: `#E6886A` on dark, `#BF5C3C` on
+  light. The lingering legacy teal highlights — TUI timestamps,
+  search-match background, context highlight, focus rings — were
+  retinted into the warm family so the palette is coherent.
+- **Improved gray contrast.** Body, preview and metadata text was hard
+  to read in both dark and light mode. Lifted `text_secondary`,
+  `text_muted`, `text_tertiary`, `preview`, `msg_count`, and the web
+  UI's `--fg-muted` / `--fg-subtle` toward higher contrast in both
+  themes, while keeping the visual hierarchy intact.
+
 ## v1.1.0 (2026-05-23)
 
 ### Added

@@ -18,7 +18,7 @@
         {
           default = pkgs.rustPlatform.buildRustPackage {
             pname = "ccmanager";
-            version = "1.1.0";
+            version = "1.1.1";
 
             src = ./.;
 
