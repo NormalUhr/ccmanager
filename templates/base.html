@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{% block title %}ccmanager{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <script src="/static/htmx.min.js" defer></script>
+    <script src="/static/app.js" defer></script>
+</head>
+<body>
+    <header class="site-header">
+        <a class="brand" href="/conversations">
+            <span class="brand-mark">◈</span>
+            <span class="brand-name">ccmanager</span>
+        </a>
+        <nav class="site-nav">
+            {% block nav %}{% endblock %}
+        </nav>
+    </header>
+    <main class="site-main">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+/target
+__pycache__/
+/history
+
+# Cargo offline-build outputs (regenerated via `cargo vendor`)
+/vendor
+/.cargo/config.toml
+
+# macOS Finder metadata
+.DS_Store
+
+# Personal exports from the TUI (`e` clipboard menu used to write these)
+/conversation-*.md
+/conversation-*.txt
+/conversation-*.jsonl
+
+# Editor / IDE droppings
+.idea/
+.vscode/
+*.swp
+*.swo

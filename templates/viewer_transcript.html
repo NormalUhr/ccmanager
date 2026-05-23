@@ -1,0 +1,25 @@
+{% if messages.is_empty() %}
+    <p class="empty-state">no messages to display with these options.</p>
+{% else %}
+    {% for msg in messages %}
+    <article class="message" id="msg-{{ msg.idx }}" data-msg-idx="{{ msg.idx }}">
+        {% match msg.kind %}
+            {% when WebMessageKind::User with { html } %}
+                <div class="speaker you">You</div>
+                <div class="md">{{ html|safe }}</div>
+            {% when WebMessageKind::Assistant with { html } %}
+                <div class="speaker claude">Claude</div>
+                <div class="md">{{ html|safe }}</div>
+            {% when WebMessageKind::ToolUse with { name, summary: _, body_html } %}
+                <div class="speaker tool">Tool</div>
+                <div class="md">{{ body_html|safe }}</div>
+            {% when WebMessageKind::ToolResult with { content_html, truncated: _ } %}
+                <div class="speaker tool">↳ Result</div>
+                <div class="md">{{ content_html|safe }}</div>
+            {% when WebMessageKind::Thinking with { html } %}
+                <div class="speaker thinking">Thinking</div>
+                <div class="md thinking-block">{{ html|safe }}</div>
+        {% endmatch %}
+    </article>
+    {% endfor %}
+{% endif %}
