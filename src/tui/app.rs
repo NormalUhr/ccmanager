@@ -1238,7 +1238,15 @@ impl App {
     }
 
     /// Handle a key event during confirmation mode
-    fn handle_confirm_key(&mut self, code: KeyCode) -> Option<Action> {
+    fn handle_confirm_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+        // Ctrl+C cancels the dialog (universal cancel). Without this, the
+        // dialog has no response to Ctrl+C at all — and to a user who
+        // tried Ctrl+C as their escape hatch and got no reaction, the TUI
+        // looks frozen even though the main loop is still ticking.
+        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+            self.dialog_mode = DialogMode::None;
+            return None;
+        }
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 self.dialog_mode = DialogMode::None;
@@ -1253,7 +1261,12 @@ impl App {
     }
 
     /// Handle a key event during the clipboard-copy format menu.
-    fn handle_menu_key(&mut self, code: KeyCode) -> Option<Action> {
+    fn handle_menu_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+        // Ctrl+C cancels (see handle_confirm_key for rationale).
+        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+            self.dialog_mode = DialogMode::None;
+            return None;
+        }
         let selected = match &mut self.dialog_mode {
             DialogMode::YankMenu { selected } => selected,
             _ => return None,
@@ -1308,7 +1321,12 @@ impl App {
     }
 
     /// Handle a key event during help overlay mode
-    fn handle_help_key(&mut self, code: KeyCode) -> Option<Action> {
+    fn handle_help_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+        // Ctrl+C dismisses the help overlay (see handle_confirm_key for rationale).
+        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+            self.dialog_mode = DialogMode::None;
+            return None;
+        }
         match code {
             KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Esc => {
                 self.dialog_mode = DialogMode::None;
@@ -1344,7 +1362,14 @@ impl App {
     ///
     /// Enter commits the trimmed title (empty = clear); Esc cancels without
     /// writing anything; Backspace/typed chars edit the buffer in place.
-    fn handle_rename_key(&mut self, code: KeyCode) -> Option<Action> {
+    fn handle_rename_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+        // Ctrl+C cancels without applying. Must come BEFORE the
+        // `Char(c) if !c.is_control()` arm below — otherwise Ctrl+C would
+        // append a literal 'c' to the rename buffer.
+        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+            self.dialog_mode = DialogMode::None;
+            return None;
+        }
         match code {
             KeyCode::Esc => {
                 self.dialog_mode = DialogMode::None;
@@ -1426,12 +1451,12 @@ impl App {
     ) -> Option<Action> {
         // Handle dialogs first
         match self.dialog_mode {
-            DialogMode::ConfirmDelete => return self.handle_confirm_key(code),
+            DialogMode::ConfirmDelete => return self.handle_confirm_key(code, modifiers),
             DialogMode::YankMenu { .. } => {
-                return self.handle_menu_key(code);
+                return self.handle_menu_key(code, modifiers);
             }
-            DialogMode::RenameInput { .. } => return self.handle_rename_key(code),
-            DialogMode::Help => return self.handle_help_key(code),
+            DialogMode::RenameInput { .. } => return self.handle_rename_key(code, modifiers),
+            DialogMode::Help => return self.handle_help_key(code, modifiers),
             DialogMode::None => {}
         }
 

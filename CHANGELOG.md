@@ -2,6 +2,23 @@
 
 (Nothing yet — next release goes here.)
 
+## v1.1.3 (2026-05-27)
+
+### Fixed
+
+- **Ctrl+C now cancels every modal dialog.** Reported as a freeze
+  on delete: pressing `Ctrl+X` to delete a session opened the
+  confirm dialog, and `Ctrl+C` (the universal "get me out of here"
+  shortcut) had no visible effect — looked like the TUI was frozen,
+  forcing a terminal-tab close. The program was actually running and
+  reading every keystroke; the confirm dialog's key handler just
+  silently ignored everything that wasn't `y / Y / n / N / Esc`. The
+  same trap existed in the export format picker and the help overlay
+  (Ctrl+C ignored), and in the rename modal (Ctrl+C arrived as
+  `Char('c')` and got appended to the title buffer as a literal `c`).
+  Ctrl+C now closes any open modal with no side effect; existing
+  `y / n / Esc` / type-to-edit bindings unchanged.
+
 ## v1.1.2 (2026-05-27)
 
 ### Fixed
