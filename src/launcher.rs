@@ -115,10 +115,22 @@ pub fn plan_resume(
 
     if needs_copy {
         let cwd_projects_dir = history::get_claude_projects_dir(cwd)?;
+        // When the selected jsonl already lives in cwd's project dir
+        // (e.g. resuming a session that was previously copied here by
+        // an earlier fork), there's nothing to copy — and naively
+        // setting `copy = Some((same, same))` would have
+        // `std::fs::copy(jsonl, jsonl)` truncate the file to 0 bytes
+        // on macOS. Drop the copy step in that case; the file is
+        // already where claude will look for it.
+        let copy = if cwd_projects_dir == conv_projects_dir {
+            None
+        } else {
+            Some((conv_projects_dir.to_path_buf(), cwd_projects_dir))
+        };
         Ok(ResumePlan {
             launch_cwd: cwd.to_path_buf(),
             args,
-            copy: Some((conv_projects_dir.to_path_buf(), cwd_projects_dir)),
+            copy,
         })
     } else {
         Ok(ResumePlan {
@@ -136,6 +148,12 @@ pub fn run_copy_step(selected_path: &Path, plan: &ResumePlan) -> Result<()> {
     let Some((source_dir, target_dir)) = &plan.copy else {
         return Ok(());
     };
+    // Defensive: `plan_resume` is supposed to set `copy = None` when
+    // src == dst, but guard here too. A `std::fs::copy(p, p)` would
+    // truncate `p` to 0 bytes on macOS, destroying the transcript.
+    if source_dir == target_dir {
+        return Ok(());
+    }
     let conversation_id = selected_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -369,36 +387,61 @@ fn spawn_macos(plan: &ResumePlan) -> Result<()> {
             ),
         ]
     } else {
-        // Terminal.app has no native "new tab" scripting command, so
-        // synthesize Cmd+T via System Events. Requires Accessibility
-        // permission for `osascript`; macOS prompts on first use.
+        // Terminal.app: use AppleScript's native `do script ""` to
+        // create a new tab/window and capture a direct reference to its
+        // tab. All subsequent commands target that tab by reference, so
+        // there's no race over "which is the front window/tab now."
         //
-        // Delays:
-        // - `0.25` after the keystroke: lets Terminal.app actually create
-        //   the new tab and make it the current tab before `do script`
-        //   lands. Without this, the script can occasionally fire into the
-        //   original tab — the one running `ccmanager` — which would
-        //   type into the TUI.
-        // - `0.8` between `cd` and `claude`: gives the shell time to
-        //   process `cd`, redraw its prompt, and run any direnv / nvm /
-        //   asdf / mise hook BEFORE we type `claude`. This is the key fix
-        //   for the "resume only works if I was already in the project
-        //   folder" bug: a project-local `claude` is only on PATH after
-        //   the hook fires for the new cwd. A pipeline like `cd && exec
-        //   claude` would skip the prompt redraw and the hook never runs.
+        // Why not the old System Events Cmd+T + `in front window`
+        // pattern? Two reasons:
+        //
+        // 1. **Race.** `do script "..." in front window` runs in the
+        //    front window's *currently selected* tab — it does not
+        //    create a tab. The old code synthesized Cmd+T and then
+        //    delayed 0.25 s, hoping the Cmd+T-created tab/window would
+        //    be the selected/front one by the time `do script` ran.
+        //    On macOS setups where Terminal.app's "New Tab" menu item
+        //    has no Cmd+T shortcut bound (default on recent macOS),
+        //    Cmd+T from System Events resolves to "open a new window"
+        //    rather than "open a new tab." The new window's promotion
+        //    to "front window" is then asynchronous; when the 0.25 s
+        //    lost the race, `do script` typed the resume command into
+        //    ccmanager's tab via stdin. Symptom: status bar said
+        //    "Resumed in new terminal tab" but no new tab appeared and
+        //    the TUI re-entered View mode mid-flood.
+        //
+        // 2. **Permissions.** System Events requires Accessibility
+        //    permission for the calling process; silent permission
+        //    drift caused confusing failures.
+        //
+        // `do script ""` (no `in` clause, empty command) creates a new
+        // window with a fresh shell and synchronously returns its tab
+        // reference. We capture it as `newTab` and run subsequent
+        // `do script "<cmd>" in newTab` against that exact tab.
+        // Nothing to race against — the reference is bound before any
+        // further work.
+        //
+        // Tabs vs. windows: on systems with macOS's "Prefer tabs when
+        // opening documents" = "Always", the OS auto-merges the new
+        // window into the existing one as a tab; on other settings it
+        // stays as a separate window. Either way the user gets a
+        // working interactive claude session and the ccmanager tab is
+        // preserved.
+        //
+        // The 0.8 s between `cd` and `claude` is retained: it gives
+        // the shell time to process `cd`, redraw its prompt, and run
+        // any direnv / nvm / asdf / mise hook BEFORE we type `claude`.
+        // A project-local `claude` is only on PATH after the hook
+        // fires for the new cwd. A pipeline like `cd && exec claude`
+        // would skip the prompt redraw and the hook would never run.
         vec![
             "tell application \"Terminal\" to activate".to_string(),
-            "tell application \"System Events\" to keystroke \"t\" using command down".to_string(),
-            "delay 0.25".to_string(),
-            format!(
-                "tell application \"Terminal\" to do script \"{}\" in front window",
-                cd_esc
-            ),
-            "delay 0.8".to_string(),
-            format!(
-                "tell application \"Terminal\" to do script \"{}\" in front window",
-                claude_esc
-            ),
+            "tell application \"Terminal\"".to_string(),
+            "  set newTab to do script \"\"".to_string(),
+            format!("  do script \"{}\" in newTab", cd_esc),
+            "  delay 0.8".to_string(),
+            format!("  do script \"{}\" in newTab", claude_esc),
+            "end tell".to_string(),
         ]
     };
     run_osascript(&lines)

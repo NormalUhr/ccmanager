@@ -254,3 +254,36 @@ fn skip_permissions_works_with_fork_session() {
     );
     std::fs::remove_dir_all(&project_path).ok();
 }
+
+#[test]
+fn plan_does_not_self_copy_when_session_already_in_cwd_projects_dir() {
+    // Scenario: the selected jsonl already lives in cwd's project dir
+    // (e.g. an earlier fork copied it here). Its recorded `cwd` field
+    // points elsewhere, so `project_dir` filtering rejects it and
+    // `needs_copy` becomes true. Naive logic would set
+    // `copy = Some((cwd_dir, cwd_dir))` — and `std::fs::copy(p, p)`
+    // truncates `p` to 0 bytes on macOS, destroying the transcript.
+    // The plan must recognize src == dst and emit `copy: None`.
+    let cwd = std::env::temp_dir().join("ch-test-no-self-copy-cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+    // Place the jsonl in CWD's project dir directly (simulates the
+    // "already a copy here" state).
+    let (temp, jsonl, _) = make_session(&cwd);
+    let _scope = EnvScope::new(temp.path());
+
+    // `project_path` is unrelated — its encoded form will NOT match
+    // the jsonl's parent dir, so `project_dir` filter returns None
+    // and the copy-fallback branch runs.
+    let unrelated = std::env::temp_dir().join("ch-test-no-self-copy-elsewhere");
+    std::fs::create_dir_all(&unrelated).unwrap();
+
+    let plan = plan_resume(&jsonl, Some(&unrelated), &[], false, &cwd, false).unwrap();
+    assert_eq!(plan.launch_cwd, cwd);
+    assert!(
+        plan.copy.is_none(),
+        "must not self-copy when jsonl is already in cwd's project dir: {:?}",
+        plan.copy
+    );
+    std::fs::remove_dir_all(&cwd).ok();
+    std::fs::remove_dir_all(&unrelated).ok();
+}

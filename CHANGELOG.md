@@ -2,6 +2,49 @@
 
 (Nothing yet — next release goes here.)
 
+## v1.1.2 (2026-05-27)
+
+### Fixed
+
+- **Resume reliably opens a new tab/window in Terminal.app.** The
+  second `Ctrl+R` (or third, or fourth) in a single ccmanager session
+  used to fail silently on macOS Terminal.app: the status bar said
+  "Resumed in new terminal tab" but no new tab appeared, and the TUI
+  re-entered the previously-viewed session's detail page. Root cause
+  was a timing race in the spawn AppleScript — the old code
+  synthesized Cmd+T via System Events, waited a fixed 0.25 s, then
+  ran `do script "..." in front window`. `do script ... in front
+  window` runs in the front window's *currently selected* tab; it
+  does not create one. On macOS setups where the "New Tab" menu item
+  has no Cmd+T shortcut bound (default on recent macOS), the
+  synthesized Cmd+T resolves to "open a new window," and the new
+  window's promotion to "front window" is asynchronous. When 0.25 s
+  lost the race, the resume command got typed into ccmanager's stdin
+  instead, which the TUI walked character-by-character — re-entering
+  View mode on the synthetic Enter, opening the rename dialog on
+  `r`, etc. The macOS spawn now uses Terminal.app's native
+  `do script ""` to create the tab and synchronously capture a
+  direct reference to it, then runs `do script "..." in newTab`
+  against that exact tab. Nothing to race against. Also removes the
+  Accessibility / System Events permission dependency. iTerm and
+  Linux paths were unaffected.
+- **Cross-project fork no longer risks truncating the transcript.**
+  When the selected session's `.jsonl` already lived in the cwd's
+  project dir (e.g. a leftover from an earlier fork) but the
+  session's recorded `cwd` field pointed elsewhere, the resume
+  planner would emit `copy: Some((same_dir, same_dir))`, and
+  `std::fs::copy(p, p)` truncates `p` to 0 bytes on macOS. The
+  resume now short-circuits the copy step when src == dst, with a
+  defensive guard in `run_copy_step` itself.
+- **Stale duplicates removed from the conversation list.** Sessions
+  that existed in more than one `~/.claude/projects/<dir>/` (typical
+  after a cross-project fork) used to show up multiple times in the
+  list, with the stale copy diverging from the live transcript over
+  time. The list now dedupes by session UUID and prefers the
+  canonical copy — the one whose parent directory name matches the
+  encoded form of its recorded `cwd`. Disk state is unchanged; only
+  the in-memory list view is filtered.
+
 ## v1.1.1 (2026-05-23)
 
 ### Changed

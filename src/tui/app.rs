@@ -2,7 +2,8 @@ use crate::config::KeyBindings;
 use crate::debug_log;
 use crate::error::{AppError, Result};
 use crate::history::{
-    Conversation, LoaderMessage, format_short_name_from_path, process_conversation_file,
+    Conversation, LoaderMessage, convert_path_to_project_dir_name, format_short_name_from_path,
+    process_conversation_file,
 };
 use crate::tui::search::{self, SearchableConversation};
 use crate::tui::ui;
@@ -541,6 +542,21 @@ impl App {
         // Sort all conversations by timestamp (newest first)
         self.conversations
             .sort_by_key(|c| std::cmp::Reverse(c.timestamp));
+
+        // De-duplicate by session UUID. The same session can end up in
+        // multiple `~/.claude/projects/<dir>/` dirs when an earlier
+        // cross-project fork (or pre-fix self-copy) cloned the `.jsonl`
+        // into a different project's dir. Without dedup the same
+        // session shows up multiple times in the list, with the stale
+        // copy diverging from the live transcript over time.
+        //
+        // Preference: keep the entry whose parent dir matches the
+        // encoded form of its recorded `cwd` — that's the canonical
+        // claude location for the session, the one claude actually
+        // appends to. If no entry is canonical (shouldn't happen, but
+        // be safe), fall back to the first one in the sort, which is
+        // already the most recent by timestamp.
+        dedup_by_session_uuid(&mut self.conversations);
 
         // Reindex after sorting
         for (idx, conv) in self.conversations.iter_mut().enumerate() {
@@ -2798,6 +2814,75 @@ const MAX_EVENT_BATCH: usize = 256;
 /// Without batching, each character triggers a full redraw before reading the next,
 /// making paste visibly slow. This function drains all ready events so the caller
 /// can process them all before a single redraw.
+/// Drop duplicate copies of the same session (same UUID) from the list.
+///
+/// Two `.jsonl` files with the same UUID in different project dirs are
+/// almost always the result of an earlier cross-project fork or
+/// pre-fix self-copy: claude only appends to the canonical one, and
+/// the others diverge. Within each UUID group, prefer the entry whose
+/// parent dir matches the encoded form of its recorded `cwd` — that's
+/// the canonical claude location. If no entry is canonical, keep the
+/// first one in the input order (callers sort newest-first beforehand,
+/// so this falls back to "most recent").
+///
+/// Assumes the input is already sorted in the desired tie-break order.
+fn dedup_by_session_uuid(conversations: &mut Vec<Conversation>) {
+    use std::collections::HashMap;
+
+    // Build a map: UUID → (chosen index, chosen-is-canonical).
+    let mut chosen: HashMap<String, (usize, bool)> = HashMap::new();
+    let mut keep = vec![true; conversations.len()];
+
+    for (idx, conv) in conversations.iter().enumerate() {
+        let Some(uuid) = conv.path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let canonical = is_canonical_session_location(conv);
+        match chosen.get(uuid).copied() {
+            None => {
+                chosen.insert(uuid.to_string(), (idx, canonical));
+            }
+            Some((prev_idx, prev_canonical)) => {
+                // Promote the new one only if it's canonical and the
+                // previous wasn't. Otherwise keep the previous (which
+                // wins ties — older sort-stable behavior).
+                if canonical && !prev_canonical {
+                    keep[prev_idx] = false;
+                    chosen.insert(uuid.to_string(), (idx, canonical));
+                } else {
+                    keep[idx] = false;
+                }
+            }
+        }
+    }
+
+    let mut iter = keep.into_iter();
+    conversations.retain(|_| iter.next().unwrap_or(true));
+}
+
+/// True when the conversation's `.jsonl` lives in the project dir that
+/// matches its recorded `cwd` (i.e. the claude-canonical location for
+/// this session). False for stale copies left over from forks or
+/// pre-fix self-copies.
+///
+/// Treats "unknown" (no parent dir, no cwd field, malformed names) as
+/// canonical so we don't accidentally drop legitimate sessions whose
+/// metadata is just incomplete.
+fn is_canonical_session_location(conv: &Conversation) -> bool {
+    let Some(parent_name) = conv
+        .path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+    else {
+        return true;
+    };
+    let Some(cwd) = conv.cwd.as_ref() else {
+        return true;
+    };
+    convert_path_to_project_dir_name(cwd) == parent_name
+}
+
 fn drain_events(wait: Duration) -> Result<Vec<Event>> {
     if !event::poll(wait).map_err(|e| AppError::Io(io::Error::other(e)))? {
         return Ok(Vec::new());
@@ -3155,5 +3240,138 @@ fn launch_in_new_terminal(
             format!("{} in new terminal tab", verb)
         }
         Err(e) => format!("Failed to open new tab: {}", e),
+    }
+}
+
+#[cfg(test)]
+mod dedup_tests {
+    use super::*;
+    use chrono::TimeZone;
+    use std::path::PathBuf;
+
+    /// Build a minimal `Conversation` with just enough fields populated
+    /// to drive the dedup logic. Everything else gets sensible defaults
+    /// — we only care about `path` and `cwd` for these tests.
+    fn make_conv(jsonl_path: &str, cwd: Option<&str>) -> Conversation {
+        Conversation {
+            path: PathBuf::from(jsonl_path),
+            index: 0,
+            timestamp: Local.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            preview: String::new(),
+            preview_first: String::new(),
+            preview_last: String::new(),
+            full_text: String::new(),
+            search_text_lower: String::new(),
+            project_name: None,
+            project_path: None,
+            cwd: cwd.map(PathBuf::from),
+            message_count: 0,
+            parse_errors: Vec::new(),
+            summary: None,
+            custom_title: None,
+            model: None,
+            total_tokens: 0,
+            duration_minutes: None,
+            last_user_question: None,
+            starred: false,
+        }
+    }
+
+    #[test]
+    fn dedup_keeps_canonical_drops_copy() {
+        // Same UUID exists in two project dirs. The one in
+        // `-Users-x-Documents-Git-together-shaping/` matches its cwd
+        // (`/Users/x/Documents/Git/together-shaping`); the other is a
+        // stale copy in `-Users-x-Documents-Git-ccmanager/`. The
+        // canonical one must win regardless of input order.
+        let uuid = "11111111-2222-3333-4444-555555555555";
+        let canonical = make_conv(
+            &format!(
+                "/root/-Users-x-Documents-Git-together-shaping/{}.jsonl",
+                uuid
+            ),
+            Some("/Users/x/Documents/Git/together-shaping"),
+        );
+        let copy = make_conv(
+            &format!("/root/-Users-x-Documents-Git-ccmanager/{}.jsonl", uuid),
+            Some("/Users/x/Documents/Git/together-shaping"),
+        );
+
+        // Order 1: copy first, canonical second.
+        let mut convs = vec![copy.clone(), canonical.clone()];
+        dedup_by_session_uuid(&mut convs);
+        assert_eq!(convs.len(), 1);
+        assert!(
+            convs[0].path.to_string_lossy().contains("together-shaping"),
+            "canonical entry should win: {:?}",
+            convs[0].path
+        );
+
+        // Order 2: canonical first, copy second.
+        let mut convs = vec![canonical, copy];
+        dedup_by_session_uuid(&mut convs);
+        assert_eq!(convs.len(), 1);
+        assert!(
+            convs[0].path.to_string_lossy().contains("together-shaping"),
+            "canonical entry should win regardless of input order"
+        );
+    }
+
+    #[test]
+    fn dedup_falls_back_to_first_when_neither_is_canonical() {
+        let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        // Both copies live in dirs that don't match their cwd field.
+        let copy_a = make_conv(
+            &format!("/root/-Users-x-project-a/{}.jsonl", uuid),
+            Some("/Users/x/elsewhere"),
+        );
+        let copy_b = make_conv(
+            &format!("/root/-Users-x-project-b/{}.jsonl", uuid),
+            Some("/Users/x/elsewhere"),
+        );
+
+        let mut convs = vec![copy_a.clone(), copy_b];
+        dedup_by_session_uuid(&mut convs);
+        assert_eq!(convs.len(), 1);
+        assert_eq!(
+            convs[0].path, copy_a.path,
+            "with no canonical winner, the first entry in input order should be kept"
+        );
+    }
+
+    #[test]
+    fn dedup_preserves_unique_uuids() {
+        let a = make_conv(
+            "/root/-Users-x-project-a/uuid-a.jsonl",
+            Some("/Users/x/project-a"),
+        );
+        let b = make_conv(
+            "/root/-Users-x-project-b/uuid-b.jsonl",
+            Some("/Users/x/project-b"),
+        );
+        let c = make_conv(
+            "/root/-Users-x-project-c/uuid-c.jsonl",
+            Some("/Users/x/project-c"),
+        );
+
+        let mut convs = vec![a.clone(), b.clone(), c.clone()];
+        dedup_by_session_uuid(&mut convs);
+        assert_eq!(convs.len(), 3, "unique UUIDs must not be touched");
+    }
+
+    #[test]
+    fn dedup_treats_missing_cwd_as_canonical() {
+        // No cwd field → can't classify, so the entry is treated as
+        // canonical and kept on the first-seen wins basis. We
+        // shouldn't silently drop legitimate sessions whose metadata
+        // happens to be incomplete.
+        let uuid = "ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb";
+        let no_cwd_first = make_conv(&format!("/root/-Users-x-foo/{}.jsonl", uuid), None);
+        let no_cwd_second = make_conv(&format!("/root/-Users-x-bar/{}.jsonl", uuid), None);
+
+        let mut convs = vec![no_cwd_first.clone(), no_cwd_second];
+        dedup_by_session_uuid(&mut convs);
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].path, no_cwd_first.path);
     }
 }
